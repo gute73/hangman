@@ -4,10 +4,11 @@ class Hangman
 	def initialize(player)
 		@player = player
 		@secret_word = generate_secret_word
+		@secret_word_compare = @secret_word.chars
 		@guessed_letters = Hash.new(26)
-		['a'..'z'].each { |letter| @guessed_letters[letter] = false}
+		('a'..'z').each { |letter| @guessed_letters[letter] = false}
 		@clue = Array.new(@secret_word.length)
-		@turn = 0
+		@misses_left = 6
 	end
 
 	# Selects a random secret word from included list of terms
@@ -24,14 +25,13 @@ class Hangman
 
 	# One complete player turn
 	def player_turn
-		@turn += 1
-		puts "Turn: #{@turn}"
+		puts "Incorrect guesses left: #{@misses_left}"
 		puts
 		print_clue
 		puts
 		guess = get_guess
-		puts
 		@guessed_letters[guess] = true
+		puts
 		match_letters(guess)
 	end
 
@@ -46,12 +46,33 @@ class Hangman
 
 	# Asks player for a letter and validates input
 	def get_guess
-
+		begin
+			print "Guess a letter: "
+			guess = gets.chomp.downcase
+			raise ArgumentError if guess.empty? || guess.length > 1 || !(guess =~ /[[:alpha:]]/)
+			raise DuplicateGuessError if @guessed_letters[guess]
+		rescue DuplicateGuessError
+			puts "You have already guessed the letter '#{guess}'."
+			puts
+			retry
+		rescue ArgumentError
+			puts "Please guess a single letter only!"
+			puts
+			retry
+		end
+		guess
 	end
 
-	# Finds matches in clue and fills in values
+	# Finds matches in clue and fills in values; decreases @misses_left counter if guess is incorrect
 	def match_letters(guess)
-
+		incorrect_guess = true
+		@secret_word_compare.each_with_index do |letter, index|
+			if letter == guess
+				@clue[index] = guess
+				incorrect_guess = false
+			end
+		end
+		@misses_left -= 1 if incorrect_guess
 	end
 
 	# Returns true if the player has won
@@ -62,7 +83,7 @@ class Hangman
 
 	# Returns true if the player has lost
 	def lose?
-		(@turn >= 6 && !win?) ? true : false
+		(@misses_left == 0 && !win?) ? true : false
 	end
 end
 
@@ -104,6 +125,10 @@ class Player
 		return true if @password.empty? || !@password || @password =~ /\s/
 		false
 	end
+end
+
+class DuplicateGuessError < ArgumentError
+
 end
 
 player = Player.new
