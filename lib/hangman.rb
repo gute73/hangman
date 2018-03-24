@@ -1,5 +1,7 @@
+require 'yaml'
+
 class Hangman
-	attr_reader :secret_word
+	attr_accessor :secret_word, :secret_word_compare, :guessed_letters, :clue, :misses_left, :player
 
 	def initialize(player)
 		@player = player
@@ -20,16 +22,20 @@ class Hangman
 			secret_word = dictionary[Random.rand(word_count)].chomp
 			break if secret_word.length >= 5 && secret_word.length <= 12
 		end
-		secret_word
+		secret_word.downcase
 	end
 
-	# One complete player turn
+	# One complete player turn, with save option
 	def player_turn
 		puts "Incorrect guesses left: #{@misses_left}"
 		puts
 		print_clue
 		puts
 		guess = get_guess
+		if guess == "1"
+			save_file
+			exit
+		end
 		@guessed_letters[guess] = true
 		puts
 		match_letters(guess)
@@ -44,13 +50,13 @@ class Hangman
 		print "\n\n"
 	end
 
-	# Asks player for a letter and validates input
+	# Asks player for a letter and validates input; "1" is flag for save
 	def get_guess
 		begin
-			print "Guess a letter: "
+			print "Guess a letter (or press '1' to save and quit): "
 			guess = gets.chomp.downcase
-			raise ArgumentError if guess.empty? || guess.length > 1 || !(guess =~ /[[:alpha:]]/)
-			raise DuplicateGuessError if @guessed_letters[guess]
+			raise ArgumentError if guess.empty? || guess.length > 1 || (!(guess =~ /[[:alpha:]]/) && guess != "1")
+			raise DuplicateGuessError if @guessed_letters[guess] unless guess == "1"
 		rescue DuplicateGuessError
 			puts "You have already guessed the letter '#{guess}'."
 			puts
@@ -85,45 +91,36 @@ class Hangman
 	def lose?
 		(@misses_left == 0 && !win?) ? true : false
 	end
-end
 
-class Player
-	def initialize
-		puts "Welcome to Hangman!"
+	# At the start of the game, determines whether the player want to load a save file
+	def self.load_game?
+		return false if !File.exists?("files/savefile.sav")
 		begin
-			print "Please enter a username: "
-			@username = gets.chomp
-			raise ArgumentError if username_invalid?
+			puts "Enter '1' to start a new game or '2' to load a save file: "
+			start_option = gets.chomp
+			raise ArgumentError if start_option != '1' && start_option != '2'
 		rescue
-			puts "The username that you entered is invalid. Please choose a username that begins with a letter and is from 4 to 20 characters long."
+			puts
+			puts "Invalid selection!"
 			retry
 		end
-
-		begin
-			print "Please enter a password: "
-			@password = gets.chomp
-			raise ArgumentError if password_invalid?
-		rescue
-			retry
-		end
-
-		@wins = 0
-		@losses = 0
+		start_option == '2' ? true : false
 	end
 
-	# Returns true if username is blank, is less than 4 characters, is greater than 20 characters, contains whitespace, or begins with a non-alphabetic character 
-	def username_invalid?
-		if @username.empty? || !@username || @username.length < 4 || @username.length > 20 || !(@username[0] =~ /[[:alpha:]]/) || @username =~ /\s/
-			true
-		else
-			false
-		end
+	#Saves current game and ends session
+	def save_file
+		save_file = File.open('files/savefile.sav', 'w')
+		save_file.write(self.to_yaml)
+		save_file.close
+
+		puts
+		puts "Thank you for playing, #{@player.name}!"
 	end
 
-	# Returns true if password is blank or contains whitespace
-	def password_invalid?
-		return true if @password.empty? || !@password || @password =~ /\s/
-		false
+	# Displays list of save files and loads the file selected by the player
+	def self.load_save
+		save_file = File.open('files/savefile.sav', 'r')
+		YAML.load(save_file)
 	end
 end
 
@@ -131,17 +128,88 @@ class DuplicateGuessError < ArgumentError
 
 end
 
-player = Player.new
-game = Hangman.new(player)
+class Player
+	attr_accessor :name, :wins, :losses, :total
 
-puts
-while !game.win? && !game.lose?
-	game.player_turn
+	def initialize(name, wins, losses, total)
+		@name = name
+		@wins = wins
+		@losses = losses
+		@total = total
+	end
+
+	# Returns the name of a new player
+	def self.get_name
+		begin
+			print "Please enter your name: "
+			name = gets.chomp
+			puts
+			raise ArgumentError if !name || name.empty?
+		rescue
+			retry
+		end
+
+		puts
+
+		name
+	end
 end
 
-puts
+first_game = true
+game = ""
+loop do
+	if first_game
+		game = Hangman.load_game? ? Hangman.load_save : Hangman.new(Player.new(Player.get_name, 0, 0, 0))
 
-puts game.win? ? "You win!" : "You lose!"
-puts
-puts "The secret word is #{game.secret_word}."
-puts
+		puts "Welcome to Hangman, #{game.player.name}!"
+	else
+		game = Hangman.new(game.player)
+	end
+
+	puts
+		while !game.win? && !game.lose?
+			game.player_turn
+	end
+	puts
+
+	if game.win?
+		puts "You win!"
+		game.player.wins += 1
+	else
+		puts "You lose!"
+		game.player.losses += 1
+	end
+	game.player.total += 1
+
+	puts
+	puts "The secret word is #{game.secret_word}."
+	puts
+
+	puts "You currently have #{game.player.wins} wins and #{game.player.losses} losses out of #{game.player.total} games."
+	puts
+	begin
+		print "Do you want to play again? (y/n): "
+		play_again = gets.chomp.downcase
+		puts
+		raise ArgumentError if play_again != "y" && play_again != "n" && play_again != "yes" && play_again != "no"
+	rescue
+		retry
+	end
+
+	if play_again == "n" || play_again == "no"
+		begin
+			print "Would you like to save the game? (y/n): "
+			save = gets.chomp.downcase
+			puts
+		raise ArgumentError if save != "y" && save != "n" && save != "yes" && save != "no"
+		rescue
+			retry
+		end
+		if save == "y" || save == "yes"
+			game = Hangman.new(game.player)
+			game.save_file
+		end
+		break
+	end
+	first_game = false	
+end
